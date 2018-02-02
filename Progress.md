@@ -14,7 +14,7 @@
    
    I believe this is the main table we should use
    Table:  SDSSDR13:dbo.PhotoObjAll ( though i did not find a SDSSDR14 version)
-   Primary Key: Unique SDSS identifier
+   Primary Key: Unique SDSS identifier Flag: type = 3 to select galaxies.
    
 4. Things I am trying to find out:
    a. what is the corresponding unique id for each galaxy.
