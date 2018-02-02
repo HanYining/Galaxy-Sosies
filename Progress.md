@@ -10,6 +10,8 @@
    Check out this:
    The data base do have a nice documentation. (you will need to register)
    http://www.voservices.net/skyquery/Apps/Schema/
+   I believe this is the main table we should use
+   Table:  SDSSDR13:dbo.PhotoObjAll ( though i did not find a SDSSDR14 version)
    
 4. Things I am trying to find out:
    a. what is the corresponding unique id for each galaxy.
