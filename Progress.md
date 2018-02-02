@@ -7,6 +7,9 @@
    
 3. The guide on how to access the data base in batch mode:
    http://skyserver.sdss.org/CasJobs/Guide.aspx
+   Check out this:
+   The data base do have a nice documentation. (you will need to register)
+   http://www.voservices.net/skyquery/Apps/Schema/
    
 4. Things I am trying to find out:
    a. what is the corresponding unique id for each galaxy.
