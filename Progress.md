@@ -1,4 +1,5 @@
-# Yining Han:
+# 2018-02-02
+
 1. Sample link I know for now that gives a thumbnail of pictures. 
    http://skyserver.sdss.org/dr14/en/tools/chart/list.aspx
    
@@ -38,7 +39,3 @@
    
 
 Need your inputs about which one to choose (Pics or Spectrums) on Monday's pre.
-
-# Eva Gjekmarkaj
-
-# Han Bao 
