@@ -30,6 +30,12 @@
    a few interesting articles about possible feature selection/engineering links:
    http://skyserver.sdss.org/dr14/en/proj/advanced/spectraltypes/lines.aspx
    http://astro.uchicago.edu/~subbarao/newWeb/line.html
+   
+7. link for the spectrum classification tutorial. (might be good source for feature engineering)
+   http://skyserver.sdss.org/dr14/en/proj/advanced/spectraltypes/spectraltypeshome.aspx
+   The basic idea is that the valleys of spectrum actually contain information about the chemical components of the galaxy.
+   Thus it is often used as an identifier for the galaxies' types.
+   
 
 Need your inputs about which one to choose (Pics or Spectrums) on Monday's pre.
 
