@@ -7,6 +7,8 @@ http://skyserver.sdss.org/dr14/en/sdss/data/data.aspx#images
 Meet after Fridays class 12:30 pm.
 Talk about the presentation details then. - 02/02/2018
 
-# Questions for now
-1. What does it mean for two galaxies to look the similar on pictures. Especially that pictures can be taken from different angles and distances. 
-2. 
+# Week2 individual objectives
+#1. Eva: Look deeper into the datasets. take a sample and plot them. Classify them.
+#2. 
+#3. Yining: Take a deeper look into this dataset and figure out how to download all the data, stack them together vertically.
+            Hopefully have everything done before Friday.
