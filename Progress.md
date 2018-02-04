@@ -39,3 +39,6 @@
    
 
 Need your inputs about which one to choose (Pics or Spectrums) on Monday's pre.
+
+8. https://dr14.sdss.org/sas/dr14/eboss/spectro/redux/v5_10_0/spectra/lite/
+   The spectrum data are here. 
