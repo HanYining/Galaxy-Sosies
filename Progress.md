@@ -42,3 +42,6 @@ Need your inputs about which one to choose (Pics or Spectrums) on Monday's pre.
 
 8. https://dr14.sdss.org/sas/dr14/eboss/spectro/redux/v5_10_0/spectra/lite/
    The spectrum data are here. 
+
+9. Power Point Presentation
+https://docs.google.com/presentation/d/16giqVTfAEH54Oge_NGmOeI6HcQuimHxN3smbgtl8YKk/edit#slide=id.p
