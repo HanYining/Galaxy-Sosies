@@ -2,7 +2,8 @@ from astropy.io import fits
 import os
 from Explorer import GalaxyInfo
 import bz2
-import scipy.interpolate as interpolate
+from scipy.interpolate import griddata
+import cv2
 
 import numpy as np
 # download / discard 'ugriz' file
@@ -85,40 +86,57 @@ class getRec:
                 bound.append(float(td[i].text))
         return bound
 
-    def rectangular(self, type='type1'):
+    def rectangular(self, type='nano'):
         """
         :return: cropped matrix.
-                 type1 -- rescale bounding vectors
-                 type2 -- interpolation image
+                 type1 -- nano
+                 type2 -- count
         """
         rectangular = []
         bound = self.getBound()
+        cropping = []
 
         for file in self.file_list:
             text = self.getFITS(file)
-            data = text[2].data[0]
-            matrix = data[0]
-            n, m = matrix.shape
+            r_bound = [round(bound[0]), round(bound[1])]
+            c_bound = [round(bound[2]), round(bound[3])]
 
-            if type == 'type1':
-                # xinterp = data[1]
-                # yinterp = data[2]
-
-                r_bound = [round(bound[0]*n/2048), round(bound[1]*n/2048)]
-                c_bound = [round(bound[2]*m/1489), round(bound[3]*m/1489)]
-
+            if type == 'nano':
+                matrix = text[0].data
                 cropping = matrix[r_bound[0]:r_bound[1], c_bound[0]:c_bound[1]]
-                rectangular.append(cropping)
 
-            if type == 'type2':
+            if type == 'count':
+                data = text[2].data[0]
                 xinterp = data[1]
                 yinterp = data[2]
-                new_matrix = self.back_interpolation(xinterp, yinterp, matrix)
+                matrix = data[0]
+                sky_img = self.back_interpolation(xinterp, yinterp, matrix)
+
+                matrix = text[0].data
+                new_matrix = matrix / text[1].data + sky_img
+                cropping = new_matrix[r_bound[0]:r_bound[1], c_bound[0]:c_bound[1]]
+
+            rectangular.append(cropping)
         return rectangular
 
     def back_interpolation(self, xinterp, yinterp, matrix):
-        # NOTE: interpolation function needs to be improved
-        return interpolate.interp2d(xinterp, yinterp, matrix)
+        n, m = matrix.shape
+
+        # original grids [n, m]
+        x = np.arange(0, n, 1)
+        y = np.arange(0, m, 1)
+        xx, yy = np.meshgrid(x, y)
+
+        points = np.array((xx.flatten(), yy.flatten())).T  # (49152, 2)
+        values = matrix.flatten()  # (49152, )
+
+        xxi, yyi = np.meshgrid(xinterp, yinterp)
+        target = np.array((xxi.flatten(), yyi.flatten())).T
+        # new = griddata(points, values, (xxi, yyi))
+        new = griddata(points, values, target)
+        new = new.reshape((2048, 1489))
+
+        return new
 
     def discard(self):
         os.system("rm -rf /Users/honka/Desktop/galaxy/FITS/")
