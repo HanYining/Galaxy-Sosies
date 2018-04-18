@@ -8,10 +8,12 @@ import random
 
 
 def invalid_est(df):
+
     """
     a brief function to check the invalid estimates of emission lines
     output a percentage of missing estimates
     """
+
     print("\n")
     for column in df.columns:
         print("{0}:{1}%".format(
@@ -19,6 +21,17 @@ def invalid_est(df):
 
 
 def pie_chart(df):
+
+    """
+    This function returns a random galaxy pie chart plot from all the
+    galaxy data frames.
+
+    This takes cares of the case
+    (etc that there are multiple NeIII emission lines)
+    in the data frame and add them up to give a total estimate of the
+    particular component.
+    """
+
     idx = random.randint(0, df.shape[0])
     bool_index = df.loc[idx] != 0
     label = [column.split("_")[1] for column, ind in
@@ -58,6 +71,9 @@ emission_lines = ['Flux_HeII_3203', 'Flux_NeV_3345', 'Flux_NeV_3425',
                   'Flux_SII_6730']
 
 emission_data = data[emission_lines]
+
+# PCA on the original whole dataset
+# notice some of those emission lines has extreme flux
 pie_chart(emission_data)
 invalid_est(emission_data)
 scaler = preprocessing.StandardScaler().fit(emission_data)
@@ -67,6 +83,10 @@ pca.fit(emission_data_std)
 print(sum(pca.explained_variance_ratio_))
 
 sns.distplot(emission_data["Flux_NeIII_3967"])
+
+# filter through the galaxies using 95% quantile on ALL features
+# this left us with only about a half of the original galaxies.
+# not sure if this makes sense to you.
 
 filter_quantile = np.all([emission_data[col] < emission_data[col].quantile(.95)
                           for col in emission_lines], axis=0)
@@ -80,5 +100,3 @@ print(sum(pca.explained_variance_ratio_))
 
 sns.distplot(filtered_galaxy["Flux_HeII_4685"])
 plt.show()
-
-
