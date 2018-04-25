@@ -24,7 +24,7 @@ class galaxy_processor:
                            'Flux_Ha_6562', 'Flux_NII_6583', 'Flux_SII_6716',
                            'Flux_SII_6730']
 
-        self._photometrics = [col for col in data.columns
+        self._photometrics = [col for col in self._data.columns
                               if col not in self._emissions and
                               col not in ["specObjID", "objid", "ra", "dec",
                                           "photoz", "specz", "type"]]
