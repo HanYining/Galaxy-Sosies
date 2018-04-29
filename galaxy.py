@@ -1,8 +1,6 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
-from sklearn import preprocessing
-import seaborn as sns
+from sklearn.cluster import DBSCAN
 import numpy as np
 import re
 
@@ -11,6 +9,8 @@ class galaxy_processor:
 
     def __init__(self, filename):
         self._data = pd.read_csv(filename)
+        self._data = self._data[[column for column in self._data.columns if
+                                not re.search("Mag", column)]]
 
         self._emissions = ['Flux_HeII_3203', 'Flux_NeV_3345', 'Flux_NeV_3425',
                            'Flux_OII_3726', 'Flux_OII_3728', 'Flux_NeIII_3868',
@@ -42,9 +42,6 @@ class galaxy_processor:
         """
         invalid_map = {}
         for column in self._emissions:
-            print("{0}:{1}%".format(
-                column, round(100*np.sum(data[column] == 0)
-                              / data.shape[0], 2)))
             invalid_map.update(
                 {column: round(100*np.sum(data[column] == 0)
                                / data.shape[0], 2)})
@@ -56,9 +53,6 @@ class galaxy_processor:
         missing_map = {}
         print("\n")
         for column in self._emissions:
-            print("{0}:{1}%".format(
-                column, round(100*np.sum(data[column] < 0)
-                              / data.shape[0], 2)))
             missing_map.update(
                 {column: round(100*np.sum(data[column] < 0)
                                / data.shape[0], 2)})
@@ -94,19 +88,46 @@ class galaxy_processor:
             self._bin_data[i] = bin[self._identifications +
                                     self._photometrics + ok_feature]
             print("bin{0}: {1}".format(i, ok_feature))
+
         pass
 
-    def post_normalization_pca(self, threshold=0.85):
+    def normalize_flux(self):
         """
-        This function do a separate pca on flux emission lines and
-        photometrics data.
-        They are separately implemented and postnormalization is
-        applied.
-        Also the number of PC vectors chosen on the two sides is by
-        using the least number of PC vectors that achieved at least
-        the threshold amount of variance explained.
+        Normalizing the emission flux by the emission
+        Flux which has the highest average.
+        Recommended but does not really make sense to me
         """
 
+        for i, bin in enumerate(self._bin_data):
+            emissions = [string for string in bin.columns
+                         if re.search("Flux", string)]
+            means = np.mean(bin[emissions], axis=0)
+            column = means.idxmax()
+            normalizing_column = bin[column]
+            normalizing_column[normalizing_column == 0] = \
+                np.mean(normalizing_column)
+            print("The reference Flux in bin:{0}: {1}".
+                  format(i+1, column))
+            new_data = bin[[string for string in emissions
+                            if string != column]]
+            origin_data = bin[[string for string in bin.columns
+                               if string not in new_data.columns and
+                               string != column]]
+            normalizing_column = normalizing_column.reshape(-1, 1)
+            new_data = np.divide(new_data, normalizing_column)
+            self._bin_data[i] = pd.concat([new_data, origin_data],
+                                          axis=1)
+
+        pass
+
+    def flux_pca(self, threshold=0.85):
+        """
+        Implement a principal components analysis on the
+        emission fluxes, preserving threshold % amount of
+        variance in the original dataset.
+        remaining principal directions are labeled as
+        "flux1", "flux2", etc
+        """
         for i, bin in enumerate(self._bin_data):
 
             # pca on flux
@@ -117,44 +138,60 @@ class galaxy_processor:
             j = 1
             while sum(pca.explained_variance_ratio_[:j]) < threshold:
                 j += 1
-            pca = PCA(n_components=j+1)
+            pca = PCA(n_components=j)
             flux_pca = pca.fit_transform(bin[emissions])
-            flux_pca = flux_pca[:, 1:]/flux_pca[:, 0].reshape(-1, 1)
-            flux_columns = ["flux" + str(k) for k in range(j)]
+            flux_columns = ["flux" + str(k+1) for k in range(j)]
             flux_df = pd.DataFrame(data=flux_pca, columns=flux_columns)
+            origin_data = bin[[col for col in bin.columns
+                               if col not in emissions]]
+            flux_df.index = origin_data.index
+            self._bin_data[i] = pd.concat([origin_data, flux_df], axis=1)
 
-            # pca on photometrics
-            pca = PCA()
-            pca.fit(bin[self._photometrics])
-            j = 1
-            while sum(pca.explained_variance_ratio_[:j]) < threshold:
-                j += 1
-            pca = PCA(n_components=j+1)
-            eval_photometrics = pca.fit_transform(bin[self._photometrics])
-            eval_photometrics = eval_photometrics[:, 1:] \
-                / eval_photometrics[:, 0].reshape(-1, 1)
-            photometrics_columns = ["photo" + str(k) for k in range(j)]
-            photo_df = pd.DataFrame(data=eval_photometrics,
-                                    columns=photometrics_columns)
-
-            iden = bin[self._identifications]
-
-            self._bin_data[i] = pd.concat([iden, flux_df, photo_df])
         pass
+
+    def generate_cluster(self):
+        """
+        not sure if we want to normalize or standardize on the
+        photometrics side though.
+
+        DBSCAN implementation here.
+        This function generate the cluster in each bin
+        based on the photometrics feature.
+
+        reference:
+        http://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html
+        http://www.aaai.org/Papers/KDD/1996/KDD96-037.pdf
+        """
+
+        for i, bin in enumerate(self._bin_data):
+
+            dbscan_cluster = DBSCAN()
+            labels = dbscan_cluster.fit_predict(bin[self._photometrics])
+            labels = labels.reshape(-1, 1)
+            label = pd.DataFrame(data=labels, columns=["group"])
+            label.index = bin.index
+            new_data = pd.concat([bin, label], axis=1)
+            new_data = new_data[new_data["group"] != -1]
+            print("distinct groups in bin{0} :{1}".
+                  format(i+1, len(np.unique(label))-1))
+
+            self._bin_data[i] = new_data
+
+        pass
+
+
 
 
 glx = galaxy_processor("summary_yinhan.csv")
 glx.bin_data()
 glx.filter_valid()
 glx.filter_under()
-glx.post_normalization_pca()
+glx.normalize_flux()
+glx.flux_pca()
+glx.generate_cluster()
 
 # now the following is a list of each bins
 # every bin contains a dataframe which represents the dimension reduced
 # galaxies.
-# only contains about 1-3 PC from flux and 1-4 features from photometrics
-# remaining features look like this on each bin
-# ["specobjid", "flux0", "flux1", "photo1", "photo2"]
-# notice the features share the same name across bins do not share the
-# same meaning.
-glx._bin_data
+# also the group column represents the group effects from photometrics.
+
