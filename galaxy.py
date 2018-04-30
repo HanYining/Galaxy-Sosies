@@ -1,8 +1,10 @@
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import re
+import scipy
 
 
 class galaxy_processor:
@@ -30,9 +32,7 @@ class galaxy_processor:
                                           "photoz", "specz", "type"]]
 
         self._identifications = ["specObjID", "objid"]
-
         self._objective = ["specz"]
-
         self._bin_data = []
 
     def zero_est(self, data):
@@ -79,7 +79,17 @@ class galaxy_processor:
             self._bin_data[i] = bin[filter]
         pass
 
-    def filter_under(self, missing_percent=50):
+    def filter_anomaly(self):
+        for i, bin in enumerate(self._bin_data):
+            flux_col = [col for col in bin.columns if re.search("Flux", col)]
+            ind = np.all([np.percentile(bin[col], 1) < bin[col]
+                          for col in flux_col], axis=0) & \
+                np.all([np.percentile(bin[col], 95) > bin[col]
+                        for col in flux_col], axis=0)
+            self._bin_data[i] = bin[ind]
+        pass
+
+    def filter_under(self, missing_percent=30):
         """filter through every features which has less than 30% of 0s"""
         for i, bin in enumerate(self._bin_data):
             zero_estimation = self.zero_est(bin)
@@ -87,7 +97,17 @@ class galaxy_processor:
                           if perc <= missing_percent]
             self._bin_data[i] = bin[self._identifications +
                                     self._photometrics + ok_feature]
-            print("bin{0}: {1}".format(i, ok_feature))
+        pass
+
+    def impute_zeros(self, methods="grand mean"):
+
+        if methods == "grand mean":
+            for i, bin in enumerate(self._bin_data):
+                flux_col = [col for col in bin.columns
+                            if re.search("Flux", col)]
+                impute_val = np.mean(np.mean(bin[flux_col]))
+                bin = bin.replace(0, impute_val)
+                self._bin_data[i] = bin
 
         pass
 
@@ -115,7 +135,7 @@ class galaxy_processor:
                                string != column]]
             normalizing_column = normalizing_column.reshape(-1, 1)
             new_data = np.divide(new_data, normalizing_column)
-            self._bin_data[i] = pd.concat([new_data, origin_data],
+            self._bin_data[i] = pd.concat([origin_data, new_data],
                                           axis=1)
 
         pass
@@ -133,13 +153,19 @@ class galaxy_processor:
             # pca on flux
             emissions = [string for string in bin.columns
                          if re.search("Flux", string)]
-            pca = PCA()
-            pca.fit(bin[emissions])
+            data = bin[emissions]
+            scaler = StandardScaler().fit(data)
+            data = scaler.transform(data)
+
             j = 1
-            while sum(pca.explained_variance_ratio_[:j]) < threshold:
-                j += 1
             pca = PCA(n_components=j)
-            flux_pca = pca.fit_transform(bin[emissions])
+            pca.fit(data)
+            while sum(pca.explained_variance_ratio_) < threshold:
+                j += 1
+                pca = PCA(n_components=j)
+                pca.fit(data)
+
+            flux_pca = pca.fit_transform(data)
             flux_columns = ["flux" + str(k+1) for k in range(j)]
             flux_df = pd.DataFrame(data=flux_pca, columns=flux_columns)
             origin_data = bin[[col for col in bin.columns
@@ -148,6 +174,19 @@ class galaxy_processor:
             self._bin_data[i] = pd.concat([origin_data, flux_df], axis=1)
 
         pass
+
+    def _get_distance_dist(self, threshold):
+
+        epsilon_distance = []
+
+        for i, bin in enumerate(self._bin_data):
+            dt = bin[self._photometrics]
+            dt = dt.iloc[np.random.choice(bin.shape[0], 2000, replace=False)]
+            dist = scipy.spatial.distance.pdist(dt[self._photometrics],
+                                                metric='euclidean')
+            epsilon_distance.append(np.percentile(dist, [threshold]))
+
+        return epsilon_distance
 
     def generate_cluster(self):
         """
@@ -163,9 +202,11 @@ class galaxy_processor:
         http://www.aaai.org/Papers/KDD/1996/KDD96-037.pdf
         """
 
+        epsilon_distance = self._get_distance_dist(0.01)
+
         for i, bin in enumerate(self._bin_data):
 
-            dbscan_cluster = DBSCAN()
+            dbscan_cluster = DBSCAN(eps=epsilon_distance[i])
             labels = dbscan_cluster.fit_predict(bin[self._photometrics])
             labels = labels.reshape(-1, 1)
             label = pd.DataFrame(data=labels, columns=["group"])
@@ -180,18 +221,14 @@ class galaxy_processor:
         pass
 
 
-
-
 glx = galaxy_processor("summary_yinhan.csv")
 glx.bin_data()
 glx.filter_valid()
 glx.filter_under()
+glx.impute_zeros()
+glx.filter_anomaly()
+
 glx.normalize_flux()
 glx.flux_pca()
+
 glx.generate_cluster()
-
-# now the following is a list of each bins
-# every bin contains a dataframe which represents the dimension reduced
-# galaxies.
-# also the group column represents the group effects from photometrics.
-
