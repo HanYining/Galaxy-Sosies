@@ -1,16 +1,20 @@
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
 import numpy as np
 import re
+import scipy
+import matplotlib.pyplot as plt
 
 
 class galaxy_processor:
 
     def __init__(self, filename):
         self._data = pd.read_csv(filename)
-        self._data = self._data[[column for column in self._data.columns if
-                                not re.search("Mag", column)]]
+        self._mag = self._data["petroMag_g"]
+        self._redshift = self._data["specz"]
 
         self._emissions = ['Flux_HeII_3203', 'Flux_NeV_3345', 'Flux_NeV_3425',
                            'Flux_OII_3726', 'Flux_OII_3728', 'Flux_NeIII_3868',
@@ -30,9 +34,7 @@ class galaxy_processor:
                                           "photoz", "specz", "type"]]
 
         self._identifications = ["specObjID", "objid"]
-
         self._objective = ["specz"]
-
         self._bin_data = []
 
     def zero_est(self, data):
@@ -79,7 +81,17 @@ class galaxy_processor:
             self._bin_data[i] = bin[filter]
         pass
 
-    def filter_under(self, missing_percent=50):
+    def filter_anomaly(self):
+        for i, bin in enumerate(self._bin_data):
+            flux_col = [col for col in bin.columns if re.search("Flux", col)]
+            ind = np.all([np.percentile(bin[col], 1) < bin[col]
+                          for col in flux_col], axis=0) & \
+                np.all([np.percentile(bin[col], 95) > bin[col]
+                        for col in flux_col], axis=0)
+            self._bin_data[i] = bin[ind]
+        pass
+
+    def filter_under(self, missing_percent=30):
         """filter through every features which has less than 30% of 0s"""
         for i, bin in enumerate(self._bin_data):
             zero_estimation = self.zero_est(bin)
@@ -87,7 +99,17 @@ class galaxy_processor:
                           if perc <= missing_percent]
             self._bin_data[i] = bin[self._identifications +
                                     self._photometrics + ok_feature]
-            print("bin{0}: {1}".format(i, ok_feature))
+        pass
+
+    def impute_zeros(self, methods="grand mean"):
+
+        if methods == "grand mean":
+            for i, bin in enumerate(self._bin_data):
+                flux_col = [col for col in bin.columns
+                            if re.search("Flux", col)]
+                impute_val = np.mean(np.mean(bin[flux_col]))
+                bin = bin.replace(0, impute_val)
+                self._bin_data[i] = bin
 
         pass
 
@@ -115,7 +137,7 @@ class galaxy_processor:
                                string != column]]
             normalizing_column = normalizing_column.reshape(-1, 1)
             new_data = np.divide(new_data, normalizing_column)
-            self._bin_data[i] = pd.concat([new_data, origin_data],
+            self._bin_data[i] = pd.concat([origin_data, new_data],
                                           axis=1)
 
         pass
@@ -133,13 +155,19 @@ class galaxy_processor:
             # pca on flux
             emissions = [string for string in bin.columns
                          if re.search("Flux", string)]
-            pca = PCA()
-            pca.fit(bin[emissions])
+            data = bin[emissions]
+            scaler = StandardScaler().fit(data)
+            data = scaler.transform(data)
+
             j = 1
-            while sum(pca.explained_variance_ratio_[:j]) < threshold:
-                j += 1
             pca = PCA(n_components=j)
-            flux_pca = pca.fit_transform(bin[emissions])
+            pca.fit(data)
+            while sum(pca.explained_variance_ratio_) < threshold:
+                j += 1
+                pca = PCA(n_components=j)
+                pca.fit(data)
+
+            flux_pca = pca.fit_transform(data)
             flux_columns = ["flux" + str(k+1) for k in range(j)]
             flux_df = pd.DataFrame(data=flux_pca, columns=flux_columns)
             origin_data = bin[[col for col in bin.columns
@@ -148,6 +176,29 @@ class galaxy_processor:
             self._bin_data[i] = pd.concat([origin_data, flux_df], axis=1)
 
         pass
+
+    def _get_distance_dist(self, threshold):
+        """
+        Get the pairwise distance from the photometrics features
+        here because the size of the data, pairwise operations can
+        quickly blow up, I choose to randomly sample a subset and estimate
+        the distance distribution.
+
+        This function is called by the cluster generator thus we could have
+        a sense on how close average points are and we can estimate a good
+        value for the epsilon in DBSCAN.
+        """
+
+        epsilon_distance = []
+
+        for i, bin in enumerate(self._bin_data):
+            dt = bin[self._photometrics]
+            dt = dt.iloc[np.random.choice(bin.shape[0], 2000, replace=False)]
+            dist = scipy.spatial.distance.pdist(dt[self._photometrics],
+                                                metric='euclidean')
+            epsilon_distance.append(np.percentile(dist, [threshold]))
+
+        return epsilon_distance
 
     def generate_cluster(self):
         """
@@ -163,15 +214,18 @@ class galaxy_processor:
         http://www.aaai.org/Papers/KDD/1996/KDD96-037.pdf
         """
 
+        epsilon_distance = self._get_distance_dist(0.01)
+
         for i, bin in enumerate(self._bin_data):
 
-            dbscan_cluster = DBSCAN()
+            dbscan_cluster = DBSCAN(eps=epsilon_distance[i])
             labels = dbscan_cluster.fit_predict(bin[self._photometrics])
             labels = labels.reshape(-1, 1)
             label = pd.DataFrame(data=labels, columns=["group"])
             label.index = bin.index
             new_data = pd.concat([bin, label], axis=1)
-            new_data = new_data[new_data["group"] != -1]
+            new_data = new_data[(new_data["group"] != -1) &
+                                (new_data["group"] != 0)]
             print("distinct groups in bin{0} :{1}".
                   format(i+1, len(np.unique(label))-1))
 
@@ -179,6 +233,81 @@ class galaxy_processor:
 
         pass
 
+    def filter_groups(self):
+
+        sosie_groups = []
+        index = np.array([])
+        cnt = 1
+        for i, bin in enumerate(glx._bin_data):
+
+            col_lst = ["specObjID", "objid", "group"]
+            flux_lst = [col for col in bin.columns if re.search("flux", col)]
+            data = bin[col_lst + flux_lst]
+
+            for i in range(1, max(data["group"])+1):
+                group_data = data.loc[data["group"] == i]
+                mean_group = np.mean(group_data[flux_lst], 0)
+                dist = np.mean((group_data[flux_lst] - mean_group)**2, axis=1)
+                threshold_dist = np.percentile(dist, 70)
+                sosie = group_data[np.mean((group_data[flux_lst]-mean_group)**2,
+                                           axis=1) < threshold_dist]["specObjID"]
+
+                if sosie.shape[0] <= 1:
+                    continue
+                index = np.hstack([index, sosie.index])
+
+                sosie = [[val, cnt] for val in list(sosie)]
+                cnt += 1
+                sosie_groups += sosie
+
+        sosie_groups = pd.DataFrame(sosie_groups,
+                                    columns=["specObjID", "group"])
+        sosie_groups.index = index
+
+        # some code in concatenate back to the data we need
+
+        data = pd.concat([sosie_groups, self._mag, self._redshift],
+                         axis=1, join='inner')
+
+        return data
+
+
+def _calculate_distance(df):
+    """
+    This function takes in a pandas dataframe with columns representing the
+    luminosity(by petroMag_g) and their redshift specz
+    For which we are thinking about give a specific minimum ratio
+
+    Here because of the relative scale of the petroMag_g
+    there is not so much difference in terms of the absolute value
+    And there is a nasty reference line I have to choose.
+    Here I set it to 14
+    """
+
+    reference_magnitude = 14
+
+    magnitude = []
+    specz = []
+    df = df.sort_values(by = ["petroMag_g", "specz"])
+    for i in range(df.shape[0]-1):
+        for j in range(i+1, df.shape[0]):
+            magnitude.append((df.iloc[j]["petroMag_g"] - reference_magnitude)
+                             /(df.iloc[i]["petroMag_g"] - reference_magnitude))
+            specz.append(df.iloc[j]["specz"]/df.iloc[i]["specz"])
+
+    return [sum(magnitude)/len(magnitude), sum(specz)/len(specz), df.shape[0]]
+
+
+def point_generater(sosies_data):
+
+    res = []
+    for group, df in sosies_data.groupby('group'):
+        res.append(_calculate_distance(df))
+
+    data = pd.DataFrame(data=res, columns=["distance", "redshift", "weight"])
+    data["distance"] = np.sqrt(data["distance"])
+
+    return data
 
 
 
@@ -186,12 +315,25 @@ glx = galaxy_processor("summary_yinhan.csv")
 glx.bin_data()
 glx.filter_valid()
 glx.filter_under()
+glx.impute_zeros()
+glx.filter_anomaly()
+
 glx.normalize_flux()
 glx.flux_pca()
 glx.generate_cluster()
+sosies_data = glx.filter_groups()
 
-# now the following is a list of each bins
-# every bin contains a dataframe which represents the dimension reduced
-# galaxies.
-# also the group column represents the group effects from photometrics.
 
+res = point_generater(sosies_data)
+lr = LinearRegression()
+lr.fit(X=res["distance"].reshape(-1, 1),
+       y=res["redshift"].reshape(-1, 1),
+       sample_weight=res["weight"])
+
+x = np.linspace(1, 1.3, num=1000)
+plt.scatter(x=res["distance"], y=res["redshift"], marker='o',
+            s=res["weight"])
+plt.plot(x, lr.intercept_ + x*lr.coef_[0, 0], '-r')
+plt.xlabel("distance ratio")
+plt.ylabel("redshift ratio")
+plt.show()
