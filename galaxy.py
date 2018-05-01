@@ -2,17 +2,19 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
 import numpy as np
 import re
 import scipy
+import matplotlib.pyplot as plt
 
 
 class galaxy_processor:
 
     def __init__(self, filename):
         self._data = pd.read_csv(filename)
-        self._data = self._data[[column for column in self._data.columns if
-                                not re.search("Mag", column)]]
+        self._mag = self._data["petroMag_g"]
+        self._redshift = self._data["specz"]
 
         self._emissions = ['Flux_HeII_3203', 'Flux_NeV_3345', 'Flux_NeV_3425',
                            'Flux_OII_3726', 'Flux_OII_3728', 'Flux_NeIII_3868',
@@ -176,6 +178,16 @@ class galaxy_processor:
         pass
 
     def _get_distance_dist(self, threshold):
+        """
+        Get the pairwise distance from the photometrics features
+        here because the size of the data, pairwise operations can
+        quickly blow up, I choose to randomly sample a subset and estimate
+        the distance distribution.
+
+        This function is called by the cluster generator thus we could have
+        a sense on how close average points are and we can estimate a good
+        value for the epsilon in DBSCAN.
+        """
 
         epsilon_distance = []
 
@@ -212,13 +224,91 @@ class galaxy_processor:
             label = pd.DataFrame(data=labels, columns=["group"])
             label.index = bin.index
             new_data = pd.concat([bin, label], axis=1)
-            new_data = new_data[new_data["group"] != -1]
+            new_data = new_data[(new_data["group"] != -1) &
+                                (new_data["group"] != 0)]
             print("distinct groups in bin{0} :{1}".
                   format(i+1, len(np.unique(label))-1))
 
             self._bin_data[i] = new_data
 
         pass
+
+    def filter_groups(self):
+
+        sosie_groups = []
+        index = np.array([])
+        cnt = 1
+        for i, bin in enumerate(glx._bin_data):
+
+            col_lst = ["specObjID", "objid", "group"]
+            flux_lst = [col for col in bin.columns if re.search("flux", col)]
+            data = bin[col_lst + flux_lst]
+
+            for i in range(1, max(data["group"])+1):
+                group_data = data.loc[data["group"] == i]
+                mean_group = np.mean(group_data[flux_lst], 0)
+                dist = np.mean((group_data[flux_lst] - mean_group)**2, axis=1)
+                threshold_dist = np.percentile(dist, 70)
+                sosie = group_data[np.mean((group_data[flux_lst]-mean_group)**2,
+                                           axis=1) < threshold_dist]["specObjID"]
+
+                if sosie.shape[0] <= 1:
+                    continue
+                index = np.hstack([index, sosie.index])
+
+                sosie = [[val, cnt] for val in list(sosie)]
+                cnt += 1
+                sosie_groups += sosie
+
+        sosie_groups = pd.DataFrame(sosie_groups,
+                                    columns=["specObjID", "group"])
+        sosie_groups.index = index
+
+        # some code in concatenate back to the data we need
+
+        data = pd.concat([sosie_groups, self._mag, self._redshift],
+                         axis=1, join='inner')
+
+        return data
+
+
+def _calculate_distance(df):
+    """
+    This function takes in a pandas dataframe with columns representing the
+    luminosity(by petroMag_g) and their redshift specz
+    For which we are thinking about give a specific minimum ratio
+
+    Here because of the relative scale of the petroMag_g
+    there is not so much difference in terms of the absolute value
+    And there is a nasty reference line I have to choose.
+    Here I set it to 14
+    """
+
+    reference_magnitude = 14
+
+    magnitude = []
+    specz = []
+    df = df.sort_values(by = ["petroMag_g", "specz"])
+    for i in range(df.shape[0]-1):
+        for j in range(i+1, df.shape[0]):
+            magnitude.append((df.iloc[j]["petroMag_g"] - reference_magnitude)
+                             /(df.iloc[i]["petroMag_g"] - reference_magnitude))
+            specz.append(df.iloc[j]["specz"]/df.iloc[i]["specz"])
+
+    return [sum(magnitude)/len(magnitude), sum(specz)/len(specz), df.shape[0]]
+
+
+def point_generater(sosies_data):
+
+    res = []
+    for group, df in sosies_data.groupby('group'):
+        res.append(_calculate_distance(df))
+
+    data = pd.DataFrame(data=res, columns=["distance", "redshift", "weight"])
+    data["distance"] = np.sqrt(data["distance"])
+
+    return data
+
 
 
 glx = galaxy_processor("summary_yinhan.csv")
@@ -230,5 +320,20 @@ glx.filter_anomaly()
 
 glx.normalize_flux()
 glx.flux_pca()
-
 glx.generate_cluster()
+sosies_data = glx.filter_groups()
+
+
+res = point_generater(sosies_data)
+lr = LinearRegression()
+lr.fit(X=res["distance"].reshape(-1, 1),
+       y=res["redshift"].reshape(-1, 1),
+       sample_weight=res["weight"])
+
+x = np.linspace(1, 1.3, num=1000)
+plt.scatter(x=res["distance"], y=res["redshift"], marker='o',
+            s=res["weight"])
+plt.plot(x, lr.intercept_ + x*lr.coef_[0, 0], '-r')
+plt.xlabel("distance ratio")
+plt.ylabel("redshift ratio")
+plt.show()
