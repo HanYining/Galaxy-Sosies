@@ -1,6 +1,7 @@
 import pandas as pd
 from sklearn.decomposition import PCA
 import re
+import numpy as np
 from sklearn.preprocessing import StandardScaler
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -15,7 +16,7 @@ class photo_processor:
         self._mag = [col for col in self._mag if col not in self._refer]
         self.redshift = self.data["specz"]
 
-        self.data.index = self.data["specObjID"]
+        self.data.index = self.data["objid"]
         self.data = self.data[self._mag + self._refer]
 
     def _take_ratio(self):
@@ -35,19 +36,17 @@ class photo_processor:
     def bindt(self, num_bins=10):
         """bin the original dataset to produce binned dataframe on redshift"""
         self.bin_data = []
-        quantiles = [i*(float(1)/num_bins) for i in range(num_bins+1)]
-        quantiles_redshift = self.redshift.quantile(
-            quantiles, interpolation="linear")
+        quantiles_redshift = list(np.linspace(0, 0.9, 10)) + [100]
 
         for i in range(len(quantiles_redshift)-1):
-            ind = (quantiles_redshift.iloc[i] <= self.redshift) \
-                & (self.redshift < quantiles_redshift.iloc[i+1])
+            ind = (quantiles_redshift[i] <= self.redshift) \
+                & (self.redshift < quantiles_redshift[i+1])
             ind = ind.values.reshape(-1, )
             self.bin_data.append(self.data.loc[ind])
 
         pass
 
-    def photometrics_pca(self, threshold=0.85):
+    def photometrics_pca(self):
         """
         Implement a principal components analysis on the
         emission fluxes, preserving threshold % amount of
@@ -61,17 +60,11 @@ class photo_processor:
             ind = bin.index
             scaler = StandardScaler().fit(bin)
             data = scaler.transform(bin)
-
-            j = 1
-            pca = PCA(n_components=j)
+            pca = PCA(n_components=2)
             pca.fit(data)
-            while sum(pca.explained_variance_ratio_) < threshold:
-                j += 1
-                pca = PCA(n_components=j)
-                pca.fit(data)
 
             flux_pca = pca.fit_transform(data)
-            photometrics_column = ["photo" + str(k+1) for k in range(j)]
+            photometrics_column = ["photo" + str(k+1) for k in range(2)]
             flux_df = pd.DataFrame(data=flux_pca,
                                    columns=photometrics_column)
             flux_df.index = ind

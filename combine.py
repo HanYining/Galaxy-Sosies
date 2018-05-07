@@ -3,11 +3,9 @@ from photometrics import photometrics
 from flux import flux
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import scipy
 import re
 from sklearn.cluster import DBSCAN
-from sklearn.linear_model import LinearRegression
 
 
 # combine the ratio of AB
@@ -106,14 +104,16 @@ def data_photo_group(data):
             ind = np.all([data["ratio_group"] == rat,
                           data["redshift_group"] == red], axis=0)
             new_data = data.loc[ind]
-            new_data = new_data.dropna(axis=1, how="all")
+            if new_data.shape[0] <= 1:
+                continue
             photo_data = new_data[["photo1", "photo2"]]
             label = generate_cluster(photo_data, 1)
             label = label+counter
             counter += label["photo_group"].unique().shape[0]
             label_list.append(label)
 
-    return pd.concat([data, pd.concat(label_list, axis=0)], axis=1, join="inner")
+    return pd.concat([data, pd.concat(label_list, axis=0)],
+                     axis=1, join="inner")
 
 
 photo_group = data_photo_group(data)
@@ -144,18 +144,36 @@ def filter_groups(data):
 
         lst.append(sosie)
 
-    data = pd.concat([pd.concat(lst), data["photo_group"]],
+    data = pd.concat([pd.concat(lst), data[["photo_group", "ratio_group",
+                                           "redshift_group"]]],
                      axis=1, join="inner")
     data = data.rename({"photo_group":"sosie_group"}, axis="columns")
+    columns = [col for col in data.columns if not re.search("flux", col)]
 
-    return data
+    return data[columns]
 
 
-refined_group = filter_groups(photo_group)["sosie_group"]
+refined_group = filter_groups(photo_group)
 data = pd.read_csv("summary_yinhan.csv")
-data.index = data["specObjID"]
+data.index = data["objid"]
 final_data = pd.concat([refined_group, data[["cModelMag_g", "specz"]]],
                        axis=1, join="inner")
+
+final_data["lower_redshift"] = final_data["specz"]
+final_data["higher_redshift"] = final_data["specz"]
+
+num_bins = 10
+quantiles_redshift = list(np.linspace(0, 0.9, 10)) + [100]
+
+for i in range(num_bins):
+    final_data.loc[final_data["redshift_group"] == i+1,
+                   "lower_redshift"] = quantiles_redshift[i]
+    final_data.loc[final_data["redshift_group"] == i+1,
+                   "higher_redshift"] = quantiles_redshift[i+1]
+
+final_data["ratio_group"] = final_data.ratio_group.astype(int)
+
+final_data.to_csv("sosie_list.txt", sep="\t")
 
 
 def _calculate_distance(df):

@@ -10,7 +10,7 @@ class galaxy_ratio:
     def __init__(self, filename):
 
         data = pd.read_csv(filename)
-        data.index = data["specObjID"]
+        data.index = data["objid"]
         columns = [col for col in data.columns if re.search("AB_", col)]
 
         self.redshift = data["specz"]
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     # does the ratio's distribution look similar across redshift bins.
 
     data = pd.read_csv("summary_yinhan.csv")
-    data.index = data["specObjID"]
+    data.index = data["objid"]
     columns = [col for col in data.columns if re.search("AB_", col)]
     redshift = data["specz"]
     data2 = pd.DataFrame(np.mean(data[columns], axis=1), columns=["ABratio"])
@@ -57,14 +57,11 @@ if __name__ == "__main__":
     data2 = pd.concat([data2, redshift], axis=1)
     data2["redshift_group"] = data2["ABratio"]
 
-    num_bins = 10
-    quantiles = [i*(float(1)/num_bins) for i in range(num_bins+1)]
-    quantiles_redshift = data2["specz"].quantile(
-        quantiles, interpolation="linear")
+    quantiles_redshift = list(np.linspace(0, 0.9, 10)) + [100]
 
     for i in range(len(quantiles_redshift)-1):
-        ind = (quantiles_redshift.iloc[i] <= data2["specz"]) \
-            & (data2["specz"] < quantiles_redshift.iloc[i+1])
+        ind = (quantiles_redshift[i] <= data2["specz"]) \
+            & (data2["specz"] < quantiles_redshift[i+1])
         ind = ind.values.reshape(-1, )
         data2.loc[ind, "redshift_group"] = i
 

@@ -11,7 +11,7 @@ class flux_operation:
         self.data = pd.read_csv(filename)
         self.redshift = self.data["specz"]
         columns = [col for col in self.data.columns if re.search("Flux", col)]
-        self.data.index = self.data["specObjID"]
+        self.data.index = self.data["objid"]
         self.data = self.data[columns]
 
     def zero_est(self, data):
@@ -41,13 +41,10 @@ class flux_operation:
         """bin the original dataset to produce binned dataframe on redshift"""
 
         self.bin_data = []
-        quantiles = [i*(float(1)/num_bins) for i in range(num_bins+1)]
-        quantiles_redshift = self.redshift.quantile(
-            quantiles, interpolation="linear")
-
+        quantiles_redshift = list(np.linspace(0, 0.9, 10)) + [100]
         for i in range(len(quantiles_redshift)-1):
-            ind = (quantiles_redshift.iloc[i] <= self.redshift) \
-                & (self.redshift < quantiles_redshift.iloc[i+1])
+            ind = (quantiles_redshift[i] <= self.redshift) \
+                & (self.redshift < quantiles_redshift[i+1])
             ind = ind.values.reshape(-1, )
             self.bin_data.append(self.data.loc[ind])
 
@@ -133,17 +130,13 @@ if __name__ == "__main__":
     columns = [col for col in data.columns if re.search("Flux", col)]
     data['redshift_group'] = np.nan
     data["redshift_group"] = data["specz"]
-    data.index = data["specObjID"]
+    data.index = data["objid"]
     data = data[columns + ["specz", "redshift_group"]]
 
-    num_bins = 10
-    quantiles = [i*(float(1)/num_bins) for i in range(num_bins+1)]
-    quantiles_redshift = data["specz"].quantile(
-        quantiles, interpolation="linear")
-
+    quantiles_redshift = list(np.linspace(0, 0.9, 10)) + [100]
     for i in range(len(quantiles_redshift)-1):
-        ind = (quantiles_redshift.iloc[i] <= data["specz"]) \
-            & (data["specz"] <= quantiles_redshift.iloc[i+1])
+        ind = (quantiles_redshift[i] <= data["specz"]) \
+            & (data["specz"] <= quantiles_redshift[i+1])
         ind = ind.values.reshape(-1, )
         data.loc[ind, "redshift_group"] = i+1
 
