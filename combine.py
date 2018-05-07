@@ -13,17 +13,17 @@ from sklearn.linear_model import LinearRegression
 # combine the ratio of AB
 rat = ratio.galaxy_ratio("summary_yinhan.csv")
 rat.average()
-rat.bin_ratio(ratio_bins=20)
+rat.bin_ratio(ratio_bins=10)
 
 # combine the photometrics features
 photo = photometrics.photo_processor("summary_yinhan.csv")
 photo._take_ratio()
-photo.bindt(5)
+photo.bindt(10)
 photo.photometrics_pca()
 
 # combine the fluxes reduced features
 flx = flux.flux_operation("summary_yinhan.csv")
-flx.bin_data(5)
+flx.bin_data(10)
 flx.filter_valid()
 flx.filter_anomaly()
 flx.normalize_flux()
@@ -192,17 +192,3 @@ def point_generater(sosies_data):
     data["distance"] = np.sqrt(data["distance"])
 
     return data
-
-
-res = point_generater(final_data)
-lr = LinearRegression()
-lr.fit(X=res["distance"].reshape(-1, 1),
-       y=res["redshift"].reshape(-1, 1))
-res = res.loc[res["redshift"]<2]
-x = np.linspace(1, 1.1, num=1000)
-
-plt.scatter(x=res["distance"], y=res["redshift"], marker='o', alpha=0.2)
-plt.plot(x, lr.intercept_ + x*lr.coef_[0, 0], '-r')
-plt.xlabel("distance ratio")
-plt.ylabel("redshift ratio")
-plt.show()

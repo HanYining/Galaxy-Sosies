@@ -48,7 +48,7 @@ class flux_operation:
         for i in range(len(quantiles_redshift)-1):
             ind = (quantiles_redshift.iloc[i] <= self.redshift) \
                 & (self.redshift < quantiles_redshift.iloc[i+1])
-            ind = ind.reshape(-1, )
+            ind = ind.values.reshape(-1, )
             self.bin_data.append(self.data.loc[ind])
 
         pass
@@ -127,3 +127,31 @@ class flux_operation:
         pass
 
 
+if __name__ == "__main__":
+
+    data = pd.read_csv("summary_yinhan.csv")
+    columns = [col for col in data.columns if re.search("Flux", col)]
+    data['redshift_group'] = np.nan
+    data["redshift_group"] = data["specz"]
+    data.index = data["specObjID"]
+    data = data[columns + ["specz", "redshift_group"]]
+
+    num_bins = 10
+    quantiles = [i*(float(1)/num_bins) for i in range(num_bins+1)]
+    quantiles_redshift = data["specz"].quantile(
+        quantiles, interpolation="linear")
+
+    for i in range(len(quantiles_redshift)-1):
+        ind = (quantiles_redshift.iloc[i] <= data["specz"]) \
+            & (data["specz"] <= quantiles_redshift.iloc[i+1])
+        ind = ind.values.reshape(-1, )
+        data.loc[ind, "redshift_group"] = i+1
+
+    # make a table for the percentage of zeros:
+
+    res = []
+    for group, sub_data in data.groupby("redshift_group"):
+        res.append(pd.DataFrame(np.mean(sub_data[columns] != 0, axis=0),
+                                columns=["Bin"+str(int(group))]))
+
+    res_df = pd.concat(res, axis=1, join="inner")
